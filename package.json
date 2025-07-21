@@ -1,0 +1,62 @@
+{
+  "name": "fusionsolar-monitor",
+  "version": "1.0.0",
+  "description": "Monitor de usinas solares FusionSolar",
+  "main": "src/main.js",
+  "homepage": "./",
+  "scripts": {
+    "electron": "electron .",
+    "electron-dev": "set ELECTRON_IS_DEV=true && electron .",
+    "start": "npx react-scripts start",
+    "build": "npx react-scripts build",
+    "test": "npx react-scripts test",
+    "eject": "npx react-scripts eject",
+    "electron-pack": "electron-builder",
+    "preelectron-pack": "npm run build",
+    "dev": "concurrently \"npm start\" \"wait-on http://localhost:3000 && npm run electron-dev\"",
+    "dev-win": "concurrently \"npm start\" \"wait-on http://localhost:3000 && set ELECTRON_IS_DEV=true && electron .\"",
+    "dist": "npm run build && electron-builder --publish=never",
+    "install-deps": "npm install react-scripts react react-dom",
+    "dev-manual": "echo Abra dois terminais: 1) npm start 2) npm run electron-dev",
+    "clean": "rmdir /s /q node_modules && del package-lock.json && npm install"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "axios": "^1.6.0",
+    "date-fns": "^2.29.3",
+    "recharts": "^2.8.0",
+    "lucide-react": "^0.263.1"
+  },
+  "devDependencies": {
+    "electron": "^22.0.0",
+    "concurrently": "^7.6.0",
+    "wait-on": "^7.0.1",
+    "electron-builder": "^24.6.4"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "build": {
+    "appId": "com.fusionsolar.monitor",
+    "productName": "FusionSolar Monitor",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "src/main.js",
+      "src/preload.js"
+    ]
+  }
+}
