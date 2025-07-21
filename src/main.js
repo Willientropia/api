@@ -64,6 +64,12 @@ class FusionSolarAPI {
     this.systemCode = '';
     this.token = '';
     this.tokenExpiry = null;
+    
+    // Criar instância axios com cookies
+    this.axiosInstance = axios.create({
+      withCredentials: true,
+      timeout: 30000
+    });
   }
 
   setCredentials(userName, systemCode) {
@@ -119,14 +125,13 @@ class FusionSolarAPI {
     
     const signature = this.generateSignature(body, timestamp);
 
-    const response = await axios.post(`${baseURL}/login`, bodyObj, {
+    const response = await this.axiosInstance.post(`${baseURL}/login`, bodyObj, {
       headers: {
         'Content-Type': 'application/json',
         'XSRF-TOKEN': signature,
         'timeStamp': timestamp,
-        'User-Agent': 'FusionSolar-Monitor/1.0'
-      },
-      timeout: 15000
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
     });
 
     console.log('API Response:', {
@@ -135,19 +140,16 @@ class FusionSolarAPI {
       success: response.data.success,
       failCode: response.data.failCode,
       tokenReceived: !!response.data.data,
-      tokenType: typeof response.data.data
+      tokenType: typeof response.data.data,
+      hasCookies: !!response.headers['set-cookie']
     });
 
     if (response.data.success) {
-      if (!response.data.data) {
-        console.error('⚠️ Login bem-sucedido mas token é null/undefined!');
-        console.log('Response completa:', response.data);
-        throw new Error('Token recebido é null ou undefined');
-      }
-      
-      this.token = response.data.data;
+      // Login bem-sucedido - a sessão está nos cookies
+      this.token = signature; // Manter a assinatura como referência
       this.tokenExpiry = Date.now() + (30 * 60 * 1000);
-      return { success: true, data: response.data.data };
+      console.log('✅ Login bem-sucedido - sessão estabelecida via cookies');
+      return { success: true, data: 'session_established' };
     } else {
       const errorMsg = this.getErrorMessage(response.data.failCode);
       throw new Error(`${response.data.failCode}: ${errorMsg}`);
@@ -198,22 +200,24 @@ class FusionSolarAPI {
     const timestamp = this.getTimestamp();
     const body = JSON.stringify(data);
     
+    // Para requisições autenticadas, sempre gerar nova assinatura
+    const signature = this.generateSignature(body, timestamp);
+    
     console.log(`Making request to ${endpoint}:`, {
       url: `${this.currentBaseURL}${endpoint}`,
       data: data,
-      hasToken: !!this.token,
-      tokenLength: this.token ? this.token.length : 0
+      timestamp: timestamp
     });
 
     try {
-      const response = await axios.post(`${this.currentBaseURL}${endpoint}`, data, {
+      // Usar a instância axios com cookies para manter a sessão
+      const response = await this.axiosInstance.post(`${this.currentBaseURL}${endpoint}`, data, {
         headers: {
           'Content-Type': 'application/json',
-          'XSRF-TOKEN': this.token,
+          'XSRF-TOKEN': signature,
           'timeStamp': timestamp,
-          'User-Agent': 'FusionSolar-Monitor/1.0'
-        },
-        timeout: 30000
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
       });
 
       console.log(`Response from ${endpoint}:`, {
@@ -229,21 +233,26 @@ class FusionSolarAPI {
       } else {
         // Se for erro de token (305 ou 407), invalidar token e tentar novamente
         if (response.data.failCode === 305 || response.data.failCode === 407) {
-          console.log('Token inválido, invalidando e tentando novamente...');
+          console.log('Sessão inválida, fazendo novo login...');
           this.token = '';
           this.tokenExpiry = null;
           
-          // Tentar uma vez mais com novo token
+          // Tentar login novamente
           await this.ensureValidToken();
           
-          const retryResponse = await axios.post(`${this.currentBaseURL}${endpoint}`, data, {
+          // Aguardar um pouco antes de tentar novamente
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          const retryTimestamp = this.getTimestamp();
+          const retrySignature = this.generateSignature(body, retryTimestamp);
+          
+          const retryResponse = await this.axiosInstance.post(`${this.currentBaseURL}${endpoint}`, data, {
             headers: {
               'Content-Type': 'application/json',
-              'XSRF-TOKEN': this.token,
-              'timeStamp': this.getTimestamp(),
-              'User-Agent': 'FusionSolar-Monitor/1.0'
-            },
-            timeout: 30000
+              'XSRF-TOKEN': retrySignature,
+              'timeStamp': retryTimestamp,
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
           });
           
           if (retryResponse.data.success) {
