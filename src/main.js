@@ -55,7 +55,11 @@ const createWindow = () => {
 // FusionSolar API Class para o main process
 class FusionSolarAPI {
   constructor() {
-    this.baseURL = 'https://intl.fusionsolar.huawei.com/thirdData';
+    // Usar apenas o servidor que sabemos que funciona
+    this.baseURLs = [
+      'https://intl.fusionsolar.huawei.com/thirdData'  // Este é o único que funciona
+    ];
+    this.currentBaseURL = this.baseURLs[0];
     this.userName = '';
     this.systemCode = '';
     this.token = '';
@@ -77,34 +81,102 @@ class FusionSolarAPI {
   }
 
   async login() {
+    // Limpar token existente antes de tentar login
+    this.token = '';
+    this.tokenExpiry = null;
+    
+    for (let i = 0; i < this.baseURLs.length; i++) {
+      const baseURL = this.baseURLs[i];
+      console.log(`Tentando login em: ${baseURL}`);
+      
+      try {
+        const result = await this.tryLoginWithURL(baseURL);
+        if (result.success) {
+          this.currentBaseURL = baseURL;
+          console.log(`✅ Login bem-sucedido em: ${baseURL}`);
+          return result;
+        }
+      } catch (error) {
+        console.log(`❌ Falha em ${baseURL}:`, error.message);
+        
+        // Se for o último servidor, lance o erro
+        if (i === this.baseURLs.length - 1) {
+          throw error;
+        }
+      }
+    }
+    
+    throw new Error('Não foi possível conectar a nenhum servidor FusionSolar');
+  }
+
+  async tryLoginWithURL(baseURL) {
     const timestamp = this.getTimestamp();
-    const body = JSON.stringify({
+    const bodyObj = {
       userName: this.userName,
       systemCode: this.systemCode
-    });
-
+    };
+    const body = JSON.stringify(bodyObj);
+    
     const signature = this.generateSignature(body, timestamp);
 
-    try {
-      const response = await axios.post(`${this.baseURL}/login`, JSON.parse(body), {
-        headers: {
-          'Content-Type': 'application/json',
-          'XSRF-TOKEN': signature,
-          'timeStamp': timestamp
-        }
-      });
+    const response = await axios.post(`${baseURL}/login`, bodyObj, {
+      headers: {
+        'Content-Type': 'application/json',
+        'XSRF-TOKEN': signature,
+        'timeStamp': timestamp,
+        'User-Agent': 'FusionSolar-Monitor/1.0'
+      },
+      timeout: 15000
+    });
 
-      if (response.data.success) {
-        this.token = response.data.data;
-        this.tokenExpiry = Date.now() + (30 * 60 * 1000);
-        return { success: true, data: response.data.data };
-      } else {
-        throw new Error(response.data.failCode || 'Falha no login');
+    console.log('API Response:', {
+      url: baseURL,
+      status: response.status,
+      success: response.data.success,
+      failCode: response.data.failCode,
+      tokenReceived: !!response.data.data,
+      tokenType: typeof response.data.data
+    });
+
+    if (response.data.success) {
+      if (!response.data.data) {
+        console.error('⚠️ Login bem-sucedido mas token é null/undefined!');
+        console.log('Response completa:', response.data);
+        throw new Error('Token recebido é null ou undefined');
       }
-    } catch (error) {
-      console.error('Erro no login:', error);
-      throw error;
+      
+      this.token = response.data.data;
+      this.tokenExpiry = Date.now() + (30 * 60 * 1000);
+      return { success: true, data: response.data.data };
+    } else {
+      const errorMsg = this.getErrorMessage(response.data.failCode);
+      throw new Error(`${response.data.failCode}: ${errorMsg}`);
     }
+  }
+
+  getErrorMessage(failCode) {
+    const errorMessages = {
+      '20001': 'Parâmetros inválidos',
+      '20002': 'Usuário não existe',
+      '20003': 'Senha incorreta',
+      '20004': 'Conta bloqueada',
+      '20005': 'Conta expirada',
+      '20006': 'Token inválido',
+      '20007': 'Token expirado',
+      '20008': 'Muitas tentativas de login',
+      '20009': 'Sistema em manutenção',
+      '20010': 'Permissão negada',
+      '20400': 'Dados de requisição inválidos ou mal formatados',
+      '20401': 'Não autorizado - verifique usuário e systemCode',
+      '20403': 'Acesso negado',
+      '20404': 'Recurso não encontrado',
+      '20500': 'Erro interno do servidor',
+      '20503': 'Serviço indisponível',
+      '305': 'Token inválido ou expirado - fazendo novo login',
+      '407': 'Token expirado - renovando automaticamente'
+    };
+    
+    return errorMessages[failCode] || `Erro desconhecido (${failCode})`;
   }
 
   isTokenValid() {
@@ -113,7 +185,10 @@ class FusionSolarAPI {
 
   async ensureValidToken() {
     if (!this.isTokenValid()) {
+      console.log('Token inválido ou expirado, fazendo novo login...');
       await this.login();
+    } else {
+      console.log('Token ainda válido, usando token existente');
     }
   }
 
@@ -122,24 +197,78 @@ class FusionSolarAPI {
     
     const timestamp = this.getTimestamp();
     const body = JSON.stringify(data);
-    const signature = this.generateSignature(body, timestamp);
+    
+    console.log(`Making request to ${endpoint}:`, {
+      url: `${this.currentBaseURL}${endpoint}`,
+      data: data,
+      hasToken: !!this.token,
+      tokenLength: this.token ? this.token.length : 0
+    });
 
     try {
-      const response = await axios.post(`${this.baseURL}${endpoint}`, JSON.parse(body), {
+      const response = await axios.post(`${this.currentBaseURL}${endpoint}`, data, {
         headers: {
           'Content-Type': 'application/json',
           'XSRF-TOKEN': this.token,
-          'timeStamp': timestamp
-        }
+          'timeStamp': timestamp,
+          'User-Agent': 'FusionSolar-Monitor/1.0'
+        },
+        timeout: 30000
+      });
+
+      console.log(`Response from ${endpoint}:`, {
+        status: response.status,
+        success: response.data.success,
+        failCode: response.data.failCode,
+        dataType: typeof response.data.data,
+        dataLength: Array.isArray(response.data.data) ? response.data.data.length : 'not-array'
       });
 
       if (response.data.success) {
         return { success: true, data: response.data.data };
       } else {
-        throw new Error(response.data.failCode || 'Erro na requisição');
+        // Se for erro de token (305 ou 407), invalidar token e tentar novamente
+        if (response.data.failCode === 305 || response.data.failCode === 407) {
+          console.log('Token inválido, invalidando e tentando novamente...');
+          this.token = '';
+          this.tokenExpiry = null;
+          
+          // Tentar uma vez mais com novo token
+          await this.ensureValidToken();
+          
+          const retryResponse = await axios.post(`${this.currentBaseURL}${endpoint}`, data, {
+            headers: {
+              'Content-Type': 'application/json',
+              'XSRF-TOKEN': this.token,
+              'timeStamp': this.getTimestamp(),
+              'User-Agent': 'FusionSolar-Monitor/1.0'
+            },
+            timeout: 30000
+          });
+          
+          if (retryResponse.data.success) {
+            return { success: true, data: retryResponse.data.data };
+          } else {
+            const errorMsg = this.getErrorMessage(retryResponse.data.failCode);
+            throw new Error(`${retryResponse.data.failCode}: ${errorMsg}`);
+          }
+        }
+        
+        const errorMsg = this.getErrorMessage(response.data.failCode);
+        throw new Error(`${response.data.failCode}: ${errorMsg}`);
       }
     } catch (error) {
-      console.error(`Erro em ${endpoint}:`, error);
+      console.error(`Error in ${endpoint}:`, {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      if (error.response?.data?.failCode) {
+        const errorMsg = this.getErrorMessage(error.response.data.failCode);
+        throw new Error(`${error.response.data.failCode}: ${errorMsg}`);
+      }
+      
       throw error;
     }
   }

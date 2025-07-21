@@ -58,37 +58,6 @@ function App() {
     checkElectron();
   }, []);
 
-  // Se não estiver no Electron, mostrar aviso
-  if (!isElectron) {
-    return (
-      <div className="app">
-        <div className="login-container">
-          <div className="login-card">
-            <div className="login-header">
-              <AlertTriangle className="icon-large" style={{ color: '#f59e0b' }} />
-              <h1>FusionSolar Monitor</h1>
-              <p>Esta aplicação deve ser executada no Electron</p>
-            </div>
-            
-            <div className="error-message">
-              <strong>Aviso:</strong> Para acessar a API do FusionSolar e evitar problemas de CORS, 
-              este aplicativo deve ser executado através do Electron.
-            </div>
-            
-            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f3f4f6', borderRadius: '8px' }}>
-              <h3 style={{ margin: '0 0 0.5rem 0', color: '#1f2937' }}>Como executar:</h3>
-              <ol style={{ margin: 0, paddingLeft: '1.5rem', color: '#374151' }}>
-                <li>Abra o terminal na pasta do projeto</li>
-                <li>Execute: <code style={{ background: '#e5e7eb', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>npm run dev</code></li>
-                <li>O Electron abrirá automaticamente</li>
-              </ol>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Login na API
   const handleLogin = async () => {
     if (!credentials.userName || !credentials.systemCode) {
@@ -169,13 +138,6 @@ function App() {
     }
   };
 
-  // Atualizar dados quando a usina ou período mudar
-  useEffect(() => {
-    if (selectedPlant && isAuthenticated) {
-      loadGenerationData();
-    }
-  }, [selectedPlant, dateRange, isAuthenticated]);
-
   // Selecionar usina
   const handlePlantChange = async (plant) => {
     setSelectedPlant(plant);
@@ -189,6 +151,44 @@ function App() {
       await loadGenerationData();
     }
   };
+
+  // Atualizar dados quando a usina ou período mudar
+  useEffect(() => {
+    if (selectedPlant && isAuthenticated) {
+      loadGenerationData();
+    }
+  }, [selectedPlant, dateRange, isAuthenticated]);
+
+  // Renderizar conteúdo baseado no estado
+  if (!isElectron) {
+    return (
+      <div className="app">
+        <div className="login-container">
+          <div className="login-card">
+            <div className="login-header">
+              <AlertTriangle className="icon-large" style={{ color: '#f59e0b' }} />
+              <h1>FusionSolar Monitor</h1>
+              <p>Esta aplicação deve ser executada no Electron</p>
+            </div>
+            
+            <div className="error-message">
+              <strong>Aviso:</strong> Para acessar a API do FusionSolar e evitar problemas de CORS, 
+              este aplicativo deve ser executado através do Electron.
+            </div>
+            
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f3f4f6', borderRadius: '8px' }}>
+              <h3 style={{ margin: '0 0 0.5rem 0', color: '#1f2937' }}>Como executar:</h3>
+              <ol style={{ margin: 0, paddingLeft: '1.5rem', color: '#374151' }}>
+                <li>Abra o terminal na pasta do projeto</li>
+                <li>Execute: <code style={{ background: '#e5e7eb', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>npm run dev</code></li>
+                <li>O Electron abrirá automaticamente</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return (
